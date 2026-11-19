@@ -4,7 +4,57 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Công cụ gộp file Excel khối lượng</title>
-<link rel="stylesheet" href="assets/style.css">
+<style>
+/* Giao diện công cụ gộp Excel */
+:root { --bg:#f5f7fa; --card:#fff; --ink:#1f2937; --muted:#6b7280; --line:#d9dee5; --brand:#1f6feb; --ok:#15803d; --warn:#b45309; --bad:#b91c1c; }
+* { box-sizing: border-box; }
+body { margin:0; font-family: Arial, "Segoe UI", sans-serif; background:var(--bg); color:var(--ink); line-height:1.5; }
+.wrap { max-width: 1240px; margin: 0 auto; padding: 24px 16px 60px; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+.sub { color: var(--muted); margin: 0 0 20px; }
+.card { background: var(--card); border:1px solid var(--line); border-radius: 10px; padding: 18px; margin-bottom: 16px; }
+.drop { display:block; border:2px dashed var(--line); border-radius: 10px; padding: 26px 12px; text-align:center; cursor:pointer; transition: .15s; background:#fafbfc; }
+.drop:hover, .drop.over { border-color: var(--brand); background:#eff6ff; }
+.drop b { font-size: 17px; display:block; margin-bottom:4px; }
+.drop .hint { color: var(--muted); font-size: 14px; }
+input[type=file] { display:none; }
+button { font: inherit; border:0; border-radius: 8px; padding: 10px 20px; cursor:pointer; font-weight:bold; }
+.green { background: var(--ok); color:#fff; }
+.gray { background:#e5e7eb; color:var(--ink); }
+.row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+.chips { display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; }
+.chip { background:#f0fdf4; border:1px solid var(--ok); color:var(--ok); border-radius:8px; padding:6px 12px; font-size:14px; word-break:break-all; }
+#status { margin-top: 12px; font-weight: bold; }
+#status.ok { color: var(--ok); } #status.err { color: var(--bad); } #status.work { color: var(--muted); }
+.tabs { display:flex; gap:6px; flex-wrap:wrap; margin: 12px 0 10px; }
+.tab { background:#eef2f7; color:var(--ink); padding:7px 16px; border:1px solid var(--line); }
+.tab.on { background: var(--brand); color:#fff; border-color: var(--brand); }
+.scroll { overflow:auto; max-height: 68vh; border:1px solid var(--line); border-radius:8px; }
+table { border-collapse: collapse; font-size: 13px; }
+.scroll table th, .scroll table td { border:1px solid var(--line); padding: 4px 7px; white-space: nowrap; }
+th { background:#d9e1f2; position: sticky; top: 0; z-index: 3; text-align:center; }
+td.n { text-align:right; }
+td.c { text-align:center; }
+.wd { font-weight: normal; color:#4b5563; }
+td.sc1, th.sc1 { position: sticky; left: 0; background:#fff; z-index: 2; min-width: 42px; text-align:center; }
+td.sc2, th.sc2 { position: sticky; left: 43px; background:#fff; z-index: 2; min-width: 110px; font-weight:bold; }
+th.sc1, th.sc2 { z-index: 4; background:#d9e1f2; }
+tr.mg td, tr.mg td.sc1, tr.mg td.sc2 { background:#fff2cc; }
+tr.tt td, tr.tt td.sc1, tr.tt td.sc2 { background:#e2efda; font-weight:bold; }
+td.note { white-space: normal; min-width: 260px; }
+.rep { max-height: 68vh; overflow:auto; }
+.rep h3 { margin: 18px 0 6px; padding: 6px 10px; background:#e2efda; border-radius:6px; font-size:15px; }
+.rep h2 { margin: 0 0 6px; font-size:18px; }
+.rep p { margin: 4px 0; font-size: 13.5px; }
+.rep table { width:100%; margin: 8px 0; } .rep th, .rep td { border:1px solid var(--line); padding:5px 8px; position:static; white-space: normal; vertical-align: top; text-align:left; font-size:13px; }
+.rep td.n { text-align:right; }
+.rep td.lv-c { color: var(--bad); font-weight: bold; } .rep td.lv-i { color: var(--muted); }
+.x { background:none; color:var(--bad); padding:0 0 0 8px; font-size:15px; }
+ul { margin: 8px 0 0; padding-left: 20px; font-size: 13px; color: var(--warn); }
+ol { padding-left: 20px; margin: 6px 0 0; }
+.small { font-size: 13px; color: var(--muted); }
+.hidden { display:none; }
+</style>
 </head>
 <body>
 <div class="wrap">
@@ -44,15 +94,612 @@
   </div>
 </div>
 
-<!-- Thư viện ExcelJS: tải từ cdnjs, nếu lỗi thì dùng jsDelivr -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<!-- Thư viện ExcelJS được tải tự động (cdnjs, dự phòng jsDelivr / unpkg) -->
 <script>
-  if (typeof ExcelJS === "undefined") {
-    document.write('<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"><\/script>');
+// Logic gộp (không phụ thuộc trình duyệt). Dùng được cả trong trình duyệt lẫn Node (để chạy test).
+// "grid" là 1 sheet đã chuẩn hóa: { maxRow, maxCol, get(r, c) -> { f: chuỗi công thức hoặc null, v: giá trị } }
+const CONST_FORMULA = /^=[\d+\-*/.() ]+$/;
+const LV_CHECK = "Cần kiểm tra", LV_INFO = "Thông tin", REPORT_SHEET = "Báo cáo gộp";
+
+function txt(v) { return v === null || v === undefined || v instanceof Date ? "" : String(v); }
+function fmtN(x) { return String(Number(x.toPrecision(10))); }
+function colLetter(n) { let s = ""; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
+function normKey(s) { return String(s).replace(/[^\p{L}\p{N}]/gu, "").toUpperCase(); }
+function toNum(v) {
+  if (v === null || v === undefined || typeof v === "boolean" || v instanceof Date) return null;
+  if (typeof v === "number") return isFinite(v) ? v : null;
+  if (typeof v === "string") {
+    const t = v.trim().replace(",", ".");
+    if (!/^[+-]?(\d+\.?\d*|\.\d+)$/.test(t)) return null;
+    return Number(t);
   }
+  return null;
+}
+function warn(list, level, where, what, advice) { list.push({ level, where, what, advice }); }
+const sum = a => a.reduce((x, y) => x + y, 0);
+
+function readSheet(grid, warns, tag) {
+  let hdr = null, thu = null;
+  const lim = Math.min(grid.maxRow, 40);
+  for (let r = 1; r <= lim; r++) {
+    const d = txt(grid.get(r, 4).v).trim().toLowerCase();
+    if (hdr === null && d === "ngày") hdr = r;
+    if (hdr !== null && d === "thứ") { thu = r; break; }
+  }
+  if (hdr === null || thu === null) return null;
+
+  let year = null, month = null;
+  for (let r = 1; r < hdr; r++) {
+    const a = txt(grid.get(r, 1).v).trim().toLowerCase();
+    const b = toNum(grid.get(r, 2).v);
+    if (a && b !== null) {
+      if (a.startsWith("năm")) year = Math.trunc(b);
+      else if (a.startsWith("tháng")) month = Math.trunc(b);
+    }
+  }
+  if (month !== null && (month < 1 || month > 12)) month = null;
+  if (year !== null && (year < 1900 || year > 2200)) year = null;
+  let nd = 31;
+  if (year && month) nd = new Date(year, month, 0).getDate();
+  else warn(warns, LV_CHECK, tag, "Không đọc được Năm/Tháng ở đầu sheet nên tạm tính tháng có 31 ngày và ghép sheet theo tên.", "Ở đầu sheet, cột A ghi chữ \"Năm\" và \"Tháng\", cột B ghi số tương ứng. Hãy kiểm tra rồi gộp lại.");
+
+  let label = txt(grid.get(hdr, 2).v).trim().replace(/^biển\s*/i, "").trim();
+  label = label ? label.charAt(0).toUpperCase() + label.slice(1).toLowerCase() : "";
+  if (label.toLowerCase().startsWith("column")) label = "";
+
+  const rows = [];
+  for (let r = thu + 1; r <= grid.maxRow; r++) {
+    const key = txt(grid.get(r, 2).v).trim();
+    const isHeader = /^column\d*$/i.test(key) || key.toLowerCase().startsWith("biển");
+    const hasKey = key !== "" && !isHeader;
+    const daily = {};
+    let typed = 0;
+    for (let d = 1; d <= nd; d++) {
+      const c = 4 + d, addr = colLetter(c) + r;
+      const cell = grid.get(r, c);
+      if (isHeader || (cell.f === null && (cell.v === null || cell.v === undefined))) continue;
+      if (cell.f !== null) {
+        const n = toNum(cell.v);
+        if (hasKey && n) {
+          daily[d] = n;
+          warn(warns, LV_INFO, tag, `Ô ${addr} (biển ${key}) là công thức ${cell.f}, không phải số gõ tay. Công cụ lấy kết quả của công thức là ${fmtN(n)} để cộng vào.`, "Nếu số này đúng là số liệu thật thì không cần làm gì. Nếu đây là công thức thừa, hãy xóa nó trong file gốc rồi gộp lại.");
+        } else if (hasKey && (cell.v === null || cell.v === undefined)) {
+          warn(warns, LV_CHECK, tag, `Ô ${addr} (biển ${key}) là công thức ${cell.f} nhưng file chưa lưu kết quả tính nên không lấy được số.`, "Mở file gốc bằng Excel, để Excel tính lại rồi bấm Lưu, sau đó gộp lại.");
+        } else if (hasKey) {
+          warn(warns, LV_INFO, tag, `Ô ${addr} (biển ${key}) là công thức ${cell.f} cho kết quả 0 nên được bỏ qua.`, "Không ảnh hưởng tổng. Nên xóa công thức thừa này trong file gốc cho gọn.");
+        }
+        continue;
+      }
+      const n = toNum(cell.v);
+      if (n === null) { if (hasKey) warn(warns, LV_CHECK, tag, `Ô ${addr} (biển ${key}) chứa chữ "${cell.v}", không phải số nên bị bỏ qua.`, "Nếu đây là số liệu thật, hãy sửa thành số trong file gốc rồi gộp lại."); }
+      else { daily[d] = n; typed++; }
+    }
+    if (!hasKey) {
+      if (typed) warn(warns, LV_CHECK, tag, `Dòng ${r} có ${typed} ô số nhập tay nhưng không có biển số ở cột B nên không được đưa vào tổng hợp.`, "Nếu đây là dòng tổng hoặc dòng đối chiếu của người lập bảng thì bỏ qua được (file tổng hợp tự tính lại tổng). Nếu là số liệu của một biển, hãy điền biển số vào cột B trong file gốc rồi gộp lại.");
+      continue;
+    }
+    const notes = [];
+    for (let c = 5 + nd; c <= grid.maxCol; c++) {
+      const cell = grid.get(r, c);
+      if (cell.f !== null) {
+        if (CONST_FORMULA.test(cell.f) && toNum(cell.v) !== null) notes.push(`${cell.f} = ${fmtN(toNum(cell.v))}`);
+      } else if (typeof cell.v === "string" && cell.v.trim()) {
+        notes.push(cell.v.trim());
+      }
+    }
+    rows.push({ key, norm: normKey(key), weight: toNum(grid.get(r, 3).v), daily, notes, label, row: r, fileIdx: 0 });
+  }
+  return { year, month, nd, label, rows };
+}
+
+function buildMergedRow(rows, nd) {
+  const weights = [...new Set(rows.map(x => x.weight))];
+  const singleW = weights.length === 1 && weights[0] !== null;
+  const noW = weights.length === 1 && weights[0] === null;
+  const daily = {};
+  for (let d = 1; d <= nd; d++) {
+    const vals = rows.filter(x => d in x.daily).map(x => x.daily[d]);
+    if (vals.length) daily[d] = sum(vals);
+  }
+  const totalTrips = sum(Object.values(daily));
+  let klMode, klParts = null, kl;
+  if (noW) { klMode = "sum"; kl = totalTrips; }
+  else if (singleW) { klMode = "times"; kl = totalTrips * weights[0]; }
+  else {
+    klMode = "literal"; kl = 0; klParts = [];
+    for (const x of rows) {
+      const t = sum(Object.values(x.daily));
+      if (x.weight !== null) { klParts.push(`${fmtN(t)}*${fmtN(x.weight)}`); kl += t * x.weight; }
+      else { klParts.push(fmtN(t)); kl += t; }
+    }
+  }
+  const src = [];
+  for (const x of rows) if (x.label && !src.includes(x.label)) src.push(x.label);
+  const notes = [];
+  if (rows.length > 1) {
+    let n = `Gộp ${rows.length} dòng trùng biển`;
+    if (!singleW && !noW) n += " (khác khối lượng: " + rows.map(x => `${x.weight !== null ? fmtN(x.weight) : "-"}x${fmtN(sum(Object.values(x.daily)))}`).join(", ") + ")";
+    notes.push(n);
+  }
+  for (const x of rows) for (const t of x.notes) if (!notes.includes(t)) notes.push(t);
+  return {
+    display: rows[0].key, daily, total: totalTrips, weight: singleW ? weights[0] : null, klMode, klParts, kl,
+    src: src.join(" + "), note: notes.join("; "), merged: rows.length > 1, count: rows.length,
+    files: [...new Set(rows.map(x => x.fileIdx + 1))].sort((a, b) => a - b),
+    rawKeys: [...new Set(rows.map(x => x.key))],
+    isInt: Object.values(daily).every(v => Number.isInteger(v)),
+  };
+}
+
+// files: mảng các file; mỗi file là mảng sheet { name, grid }.  fileNames: tên các file (để ghi báo cáo).
+// Sheet được ghép với nhau theo Tháng/Năm ghi trong sheet; nếu không đọc được thì ghép theo tên sheet.
+function planMerge(files, fileNames) {
+  const n = files.length;
+  fileNames = fileNames || files.map((_, i) => `File ${i + 1}`);
+  const warns = [], summary = [], detail = [], sheets = [], groups = new Map(), used = new Set();
+  files.forEach((f, i) => f.forEach(s => {
+    const parsed = readSheet(s.grid, warns, `${s.name} / File ${i + 1}`);
+    const key = parsed && parsed.year && parsed.month ? `ym:${parsed.year}-${parsed.month}` : `name:${s.name.trim().toLowerCase()}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push({ fileIdx: i, name: s.name, grid: s.grid, parsed });
+  }));
+  used.add(REPORT_SHEET.toLowerCase());
+  const uniq = nm => {
+    const clean = nm.replace(/[\\\/?*\[\]:]/g, "-").slice(0, 31) || "Sheet";
+    let u = clean, k = 2;
+    while (used.has(u.toLowerCase())) { const suf = ` (${k++})`; u = clean.slice(0, 31 - suf.length) + suf; }
+    used.add(u.toLowerCase());
+    return u;
+  };
+  for (const items of groups.values()) {
+    const base = items[0].name.trim();
+    const fileSet = [...new Set(items.map(x => x.fileIdx))];
+    const names = [...new Set(items.map(x => x.name.trim()))];
+    if (items.some(x => x.parsed === null)) {
+      const name = uniq(base);
+      sheets.push({ type: "copy", name, srcName: items[0].name, fileIdx: items[0].fileIdx });
+      summary.push({ sheet: name, inFiles: fileSet, counts: null, before: null, after: null, dropped: null, kl: null,
+        note: `Sheet này không đúng mẫu (không có cột Ngày/Thứ) nên được chép nguyên vẹn từ File ${items[0].fileIdx + 1}` + (items.length > 1 ? `; các bản ở file khác không được lấy.` : ".") });
+      continue;
+    }
+    const parsed = items.map(x => x.parsed);
+    const year = (parsed.find(p => p.year) || {}).year;
+    const month = (parsed.find(p => p.month) || {}).month;
+    if (new Set(parsed.map(p => `${p.month}/${p.year}`)).size > 1) warn(warns, LV_CHECK, base, `Các file ghi Tháng/Năm khác nhau: ${parsed.map(p => `${p.month}/${p.year}`).join(" và ")}. Công cụ vẫn gộp chúng với nhau theo tên sheet.`, "Kiểm tra xem có chọn nhầm file của tháng khác không.");
+    if (names.length > 1) warn(warns, LV_INFO, base, `Các sheet tên khác nhau ("${names.join('", "')}") có cùng Tháng/Năm ${month}/${year} nên được gộp với nhau.`, "Không cần làm gì nếu đúng là cùng một tháng.");
+    for (const k of fileSet) if (items.filter(x => x.fileIdx === k).length > 1) warn(warns, LV_CHECK, base, `File ${k + 1} có nhiều sheet cùng tháng ${month}/${year}; tất cả đều được cộng vào.`, "Kiểm tra xem có sheet nào là bản sao của sheet khác (sẽ bị cộng trùng) không.");
+    const nd = parsed[0].nd;
+    const map = new Map();
+    for (const it of items) for (const x of it.parsed.rows) {
+      x.fileIdx = it.fileIdx;
+      if (!map.has(x.norm)) map.set(x.norm, []);
+      map.get(x.norm).push(x);
+    }
+    const rows = [...map.values()].map(g => buildMergedRow(g, nd));
+    const counts = files.map((_, k) => items.filter(x => x.fileIdx === k).reduce((a, x) => a + x.parsed.rows.length, 0));
+    const before = sum(counts), name = uniq(base);
+    const dups = rows.filter(r => r.merged);
+    sheets.push({ type: "merged", name, year, month, nd, rows });
+    summary.push({ sheet: name, inFiles: fileSet, counts, before, after: rows.length, dropped: before - rows.length, kl: sum(rows.map(r => r.kl)),
+      note: (fileSet.length === 1 ? `Sheet này chỉ có ở File ${fileSet[0] + 1} nên không có gì để cộng thêm từ file khác. ` : `Ghép các sheet tháng ${month}/${year} của ${fileSet.length} file. `)
+        + (dups.length ? `Có ${dups.length} biển xuất hiện nhiều lần nên được gộp, làm số dòng giảm ${before - rows.length}.` : "Không có biển nào trùng nên không dòng nào phải gộp.") });
+    for (const m of dups) {
+      let ex = m.files.length === 1 ? `Biển xuất hiện ${m.count} dòng trong cùng File ${m.files[0]}` : `Biển xuất hiện ${m.count} dòng, ở các file: ${m.files.join(", ")}`;
+      ex += " -> giữ lại 1 dòng, cộng số liệu từng ngày.";
+      if (m.klMode === "literal") ex += " Các dòng có khối lượng khác nhau nên KL được tính riêng từng mức rồi cộng lại.";
+      if (m.total === 0) ex += " (Chưa có số liệu ngày.)";
+      detail.push({ sheet: name, key: m.display, from: m.files.map(k => `File ${k}`).join(" + "), count: m.count, total: m.total, kl: m.kl,
+        rawKeys: m.rawKeys.length > 1 ? m.rawKeys.join(" / ") : "", explain: ex });
+    }
+  }
+  const fileSheets = files.map(f => f.map(s => s.name));
+  const doc = buildReportDoc({ n, fileNames, fileSheets, summary, detail, warns });
+  return { sheets, warns, summary, detail, doc };
+}
+
+// Báo cáo dạng "tài liệu": title / text / h / table (mỗi cột có from..to là vị trí cột trong Excel)
+function buildReportDoc(R) {
+  const col = (label, from, to) => ({ label, from, to: to || from });
+  const doc = [];
+  doc.push({ t: "title", text: "BÁO CÁO GỘP DỮ LIỆU" });
+  doc.push({ t: "text", text: `Báo cáo này cho biết: (1) file tổng hợp được tạo từ những file nào; (2) mỗi sheet được gộp ra sao; (3) những biển nào đã được gộp lại; (4) những điểm bạn nên kiểm tra; (5) cách đọc sheet tổng hợp.` });
+
+  doc.push({ t: "h", text: "1. Các file đã dùng" });
+  doc.push({ t: "table", cols: [col("File", 1), col("Tên file", 2), col("Các sheet có trong file", 3, 8)],
+    rows: R.fileNames.map((nm, i) => [`File ${i + 1}`, nm, R.fileSheets[i].join(", ")]) });
+
+  doc.push({ t: "h", text: "2. Kết quả theo từng sheet" });
+  doc.push({ t: "text", text: "Mỗi sheet của file tổng hợp được tạo bằng cách ghép các sheet cùng Tháng/Năm của các file. Số dòng sau gộp = tổng số dòng của các file - số dòng bị gộp bớt (do biển trùng nhau). Tổng KL là tổng khối lượng của toàn bộ sheet đó." });
+  doc.push({ t: "table", cols: [col("Sheet", 1), col("Có ở file", 2), col("Số dòng ở từng file", 3), col("Tổng dòng trước gộp", 4), col("Số dòng sau gộp", 5), col("Số dòng bị gộp bớt", 6), col("Tổng KL (M3)", 7), col("Giải thích", 8)],
+    rows: R.summary.map(r => [r.sheet, r.inFiles.map(k => `File ${k + 1}`).join(", "),
+      r.counts ? r.counts.map((c, k) => `File ${k + 1}: ${c}`).join("; ") : "-",
+      r.before === null ? "-" : r.before, r.after === null ? "-" : r.after, r.dropped === null ? "-" : r.dropped, r.kl === null ? "-" : r.kl, r.note]) });
+
+  doc.push({ t: "h", text: "3. Các biển đã được gộp" });
+  if (!R.detail.length) doc.push({ t: "text", text: "Không có biển nào xuất hiện nhiều hơn 1 lần, nên không dòng nào phải gộp." });
+  else {
+    doc.push({ t: "text", text: "Một biển số xuất hiện nhiều lần (trong cùng 1 file hoặc ở nhiều file) chỉ được giữ lại 1 dòng, số liệu từng ngày được cộng lại. Khi so sánh biển số, công cụ bỏ qua khác biệt chữ hoa/thường, dấu gạch ngang và khoảng trắng (ví dụ 98H05759 và 98H-05759 là một). Các dòng này được tô vàng trong sheet tổng hợp." });
+    doc.push({ t: "table", cols: [col("Sheet", 1), col("Biển số", 2), col("Gộp từ", 3), col("Số dòng gộp", 4), col("Tổng số (M3 hoặc chuyến)", 5), col("Tổng KL (M3)", 6), col("Cách viết khác nhau trong file gốc", 7), col("Giải thích", 8)],
+      rows: R.detail.map(d => [d.sheet, d.key, d.from, d.count, d.total, d.kl, d.rawKeys, d.explain]) });
+  }
+
+  doc.push({ t: "h", text: "4. Những điểm cần lưu ý khi đọc dữ liệu" });
+  if (!R.warns.length) doc.push({ t: "text", text: "Không có điểm nào cần lưu ý." });
+  else {
+    doc.push({ t: "text", text: `Đây là những chỗ công cụ phải tự quyết định khi đọc file. Mục "${LV_CHECK}" nên xem lại; mục "${LV_INFO}" thường không ảnh hưởng đến kết quả.` });
+    const ordered = [...R.warns.filter(w => w.level === LV_CHECK), ...R.warns.filter(w => w.level !== LV_CHECK)];
+    doc.push({ t: "table", cols: [col("Mức độ", 1), col("Sheet / File", 2), col("Điều gì đã xảy ra", 3, 7), col("Nên làm gì", 8)], rows: ordered.map(w => [w.level, w.where, w.what, w.advice]) });
+  }
+
+  doc.push({ t: "h", text: "5. Cách đọc sheet tổng hợp" });
+  [
+    "Số liệu từng ngày: với tàu là M3, với xe là số chuyến. Cột \"Nguồn\" cho biết dòng đó là tàu hay xe.",
+    "Tổng số = cộng số liệu các ngày trong tháng (cộng theo hàng ngang).",
+    "Tổng KL (M3) = tổng chuyến x khối lượng mỗi chuyến (với xe); với tàu thì bằng Tổng số. Chỉ cột này mới cộng được giữa tàu và xe.",
+    "Dòng TỔNG CỘNG ở cuối bảng chỉ cộng cột Tổng KL (M3).",
+    "Dòng tô vàng là dòng đã gộp từ nhiều dòng; cột Ghi chú nói rõ gộp thế nào và giữ lại các ghi chú tay của file gốc.",
+    "Dòng tổng ở cuối bảng và các cột tính nháp bên phải của file gốc không được lấy, vì file tổng hợp tự tính lại tổng.",
+    "Thứ tự dòng: theo thứ tự xuất hiện lần đầu, tính từ File 1 trở đi.",
+  ].forEach(t => doc.push({ t: "text", text: "- " + t }));
+  return doc;
+}
+
+
+
+// Đọc/ghi file Excel bằng ExcelJS (chỉ chạy trong trình duyệt).
+// ======================= GHI FILE EXCEL (ExcelJS) =======================
+const FONT = { name: "Arial", size: 10 };
+const THIN = { style: "thin", color: { argb: "FF999999" } };
+const BORDER = { left: THIN, right: THIN, top: THIN, bottom: THIN };
+const FILL = a => ({ type: "pattern", pattern: "solid", fgColor: { argb: a } });
+const HEAD_FILL = FILL("FFD9E1F2"), MERGED_FILL = FILL("FFFFF2CC"), TOTAL_FILL = FILL("FFE2EFDA");
+
+function sty(cell, o = {}) {
+  cell.font = { ...FONT, bold: !!o.bold };
+  cell.border = BORDER;
+  if (o.fill) cell.fill = o.fill;
+  if (o.center) cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+  if (o.fmt) cell.numFmt = o.fmt;
+}
+
+function writeMergedSheet(wb, p) {
+  const ws = wb.addWorksheet(p.name);
+  const nd = p.nd, cTot = 5 + nd, cKl = 6 + nd, cSrc = 7 + nd, cNote = 8 + nd;
+  const hasDate = !!(p.year && p.month);
+  const WD = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+  ws.getCell("A1").value = hasDate
+    ? `BẢNG TỔNG HỢP KHỐI LƯỢNG THÁNG ${p.month} NĂM ${p.year} - CÔNG TY CỔ PHẦN LIZEN`
+    : "BẢNG TỔNG HỢP KHỐI LƯỢNG - CÔNG TY CỔ PHẦN LIZEN";
+  ws.getCell("A1").font = { name: "Arial", size: 12, bold: true };
+  [["Năm", p.year], ["Tháng", p.month]].forEach(([lab, val], i) => {
+    ws.getCell(2 + i, 1).value = lab; ws.getCell(2 + i, 1).font = { ...FONT, bold: true };
+    if (val) ws.getCell(2 + i, 2).value = val;
+    ws.getCell(2 + i, 2).font = { ...FONT, color: { argb: "FF0000FF" } };
+  });
+  [[1, "Stt"], [2, "Biển tàu / xe"], [3, "Khối lượng"], [4, "Ngày"]].forEach(([c, t]) => { ws.getCell(5, c).value = t; sty(ws.getCell(5, c), { bold: true, fill: HEAD_FILL, center: true }); });
+  ws.getCell(6, 4).value = "Thứ";
+  for (let c = 1; c <= 4; c++) sty(ws.getCell(6, c), { bold: true, fill: HEAD_FILL, center: true });
+  for (let d = 1; d <= nd; d++) {
+    const c = 4 + d, L = colLetter(c);
+    if (hasDate) {
+      const dt = new Date(Date.UTC(p.year, p.month - 1, d));
+      ws.getCell(5, c).value = { formula: d === 1 ? "DATE($B$2,$B$3,1)" : `${colLetter(c - 1)}5+1`, result: dt };
+      ws.getCell(6, c).value = { formula: `TEXT(${L}5,"[$-42A]ddd")`, result: WD[dt.getUTCDay()] };
+      sty(ws.getCell(5, c), { bold: true, fill: HEAD_FILL, center: true, fmt: "dd/mm" });
+    } else {
+      ws.getCell(5, c).value = d;
+      sty(ws.getCell(5, c), { bold: true, fill: HEAD_FILL, center: true });
+    }
+    sty(ws.getCell(6, c), { bold: true, fill: HEAD_FILL, center: true });
+  }
+  [[cTot, "Tổng số"], [cKl, "Tổng KL (M3)"], [cSrc, "Nguồn"], [cNote, "Ghi chú"]].forEach(([c, t]) => {
+    ws.getCell(5, c).value = t; sty(ws.getCell(5, c), { bold: true, fill: HEAD_FILL, center: true });
+    sty(ws.getCell(6, c), { bold: true, fill: HEAD_FILL, center: true });
+  });
+
+  const first = 7;
+  let r = first, sumKl = 0;
+  for (const m of p.rows) {
+    ws.getCell(r, 1).value = { formula: "ROW()-6", result: r - 6 };
+    ws.getCell(r, 2).value = m.display;
+    if (m.weight !== null) ws.getCell(r, 3).value = m.weight;
+    for (const [d, v] of Object.entries(m.daily)) ws.getCell(r, 4 + Number(d)).value = v;
+    ws.getCell(r, cTot).value = { formula: `SUM(E${r}:${colLetter(4 + nd)}${r})`, result: m.total };
+    const T = colLetter(cTot);
+    ws.getCell(r, cKl).value = { formula: m.klMode === "sum" ? `${T}${r}` : m.klMode === "times" ? `${T}${r}*C${r}` : m.klParts.join("+"), result: m.kl };
+    sumKl += m.kl;
+    ws.getCell(r, cSrc).value = m.src;
+    ws.getCell(r, cNote).value = m.note;
+    for (let c = 1; c <= cNote; c++) sty(ws.getCell(r, c), { fill: m.merged ? MERGED_FILL : null, center: c === 1 || c === 3 || c === cSrc });
+    ws.getCell(r, 2).alignment = { horizontal: "left" };
+    for (let d = 1; d <= nd; d++) { ws.getCell(r, 4 + d).numFmt = m.isInt ? "#,##0" : "#,##0.0"; ws.getCell(r, 4 + d).alignment = { horizontal: "right" }; }
+    ws.getCell(r, cTot).numFmt = m.isInt ? "#,##0" : "#,##0.0";
+    ws.getCell(r, cKl).numFmt = "#,##0.0";
+    r++;
+  }
+  const last = r - 1;
+  ws.getCell(r, 2).value = "TỔNG CỘNG";
+  ws.getCell(r, cKl).value = last >= first ? { formula: `SUM(${colLetter(cKl)}${first}:${colLetter(cKl)}${last})`, result: sumKl } : 0;
+  for (let c = 1; c <= cNote; c++) sty(ws.getCell(r, c), { bold: true, fill: TOTAL_FILL });
+  ws.getCell(r, cKl).numFmt = "#,##0.0";
+  const note = ws.getCell(r + 2, 2);
+  note.value = "Lưu ý: dòng tô vàng là dòng đã gộp. Với tàu, số liệu ngày là M3; với xe, số liệu ngày là số chuyến. Chỉ cột 'Tổng KL (M3)' mới cộng được giữa tàu và xe.";
+  note.font = { name: "Arial", size: 9, italic: true };
+  const widths = { 1: 6, 2: 15, 3: 11, 4: 8 };
+  for (let c = 1; c <= cNote; c++) ws.getColumn(c).width = widths[c] || 7;
+  ws.getColumn(cTot).width = 10; ws.getColumn(cKl).width = 14; ws.getColumn(cSrc).width = 10; ws.getColumn(cNote).width = 45;
+  ws.views = [{ state: "frozen", xSplit: 4, ySplit: 6 }];
+}
+
+function copySheetAsIs(wb, srcWs, name) {
+  const ws = wb.addWorksheet(name);
+  srcWs.eachRow({ includeEmpty: false }, (row, rn) => {
+    row.eachCell({ includeEmpty: false }, (cell, cn) => {
+      const dst = ws.getCell(rn, cn);
+      let v = cell.value;
+      if (v && typeof v === "object" && !(v instanceof Date)) {
+        if ("formula" in v && !String(v.formula).includes("[")) v = { formula: v.formula };
+        else if ("formula" in v || "sharedFormula" in v) v = v.result === undefined ? null : v.result;
+      }
+      dst.value = v;
+      try { dst.style = JSON.parse(JSON.stringify(cell.style)); } catch (e) { /* bỏ qua lỗi định dạng */ }
+    });
+  });
+  for (let c = 1; c <= srcWs.columnCount; c++) { const w = srcWs.getColumn(c).width; if (w) ws.getColumn(c).width = w; }
+  srcWs.eachRow({ includeEmpty: false }, (row, rn) => { if (row.height) ws.getRow(rn).height = row.height; });
+  const merges = (srcWs.model && srcWs.model.merges) || [];
+  for (const m of merges) { try { ws.mergeCells(m); } catch (e) { /* bỏ qua ô gộp lỗi */ } }
+}
+
+function writeReportSheet(wb, doc) {
+  const ws = wb.addWorksheet(REPORT_SHEET);
+  const W = [16, 30, 28, 14, 14, 14, 20, 66];
+  W.forEach((w, i) => ws.getColumn(i + 1).width = w);
+  const width = (f, t) => sum(W.slice(f - 1, t));
+  const lines = (text, w) => Math.max(1, Math.ceil(String(text).length / (w * 0.95)));
+  let r = 1;
+  for (const b of doc) {
+    if (b.t === "title") {
+      ws.getCell(r, 1).value = b.text; ws.getCell(r, 1).font = { name: "Arial", size: 14, bold: true }; r += 1;
+    } else if (b.t === "h") {
+      r += 1;
+      ws.mergeCells(r, 1, r, 8);
+      const c = ws.getCell(r, 1); c.value = b.text; c.font = { ...FONT, size: 11, bold: true }; c.fill = TOTAL_FILL;
+      r += 1;
+    } else if (b.t === "text") {
+      ws.mergeCells(r, 1, r, 8);
+      const c = ws.getCell(r, 1); c.value = b.text; c.font = FONT; c.alignment = { wrapText: true, vertical: "top" };
+      ws.getRow(r).height = Math.max(15, lines(b.text, width(1, 8)) * 13 + 4);
+      r += 1;
+    } else if (b.t === "table") {
+      let h = 15;
+      for (const col of b.cols) {
+        const c = ws.getCell(r, col.from); c.value = col.label;
+        if (col.to > col.from) ws.mergeCells(r, col.from, r, col.to);
+        for (let k = col.from; k <= col.to; k++) sty(ws.getCell(r, k), { bold: true, fill: HEAD_FILL, center: true });
+        h = Math.max(h, lines(col.label, width(col.from, col.to)) * 13 + 4);
+      }
+      ws.getRow(r).height = h; r += 1;
+      for (const row of b.rows) {
+        let rh = 15;
+        b.cols.forEach((col, i) => {
+          const v = row[i], c = ws.getCell(r, col.from);
+          c.value = v === "" ? null : v;
+          if (col.to > col.from) ws.mergeCells(r, col.from, r, col.to);
+          for (let k = col.from; k <= col.to; k++) { sty(ws.getCell(r, k)); ws.getCell(r, k).alignment = { wrapText: true, vertical: "top", horizontal: typeof v === "number" ? "right" : "left" }; }
+          if (typeof v === "number") c.numFmt = Number.isInteger(v) ? "#,##0" : "#,##0.0";
+          rh = Math.max(rh, lines(v === null || v === undefined ? "" : v, width(col.from, col.to)) * 13 + 4);
+        });
+        ws.getRow(r).height = rh; r += 1;
+      }
+    }
+  }
+  ws.views = [{ state: "frozen", ySplit: 1 }];
+}
+
+// ======================= ĐỌC FILE EXCEL (ExcelJS -> grid) =======================
+function gridFromWorksheet(ws) {
+  const map = new Map();
+  let maxRow = 0, maxCol = 0;
+  ws.eachRow({ includeEmpty: false }, (row, rn) => {
+    row.eachCell({ includeEmpty: false }, (cell, cn) => {
+      if (cell.master && cell.master !== cell) return; // ô phụ của vùng gộp: bỏ để không đếm trùng
+      let v = cell.value, out;
+      if (v === null || v === undefined) return;
+      if (typeof v === "object" && !(v instanceof Date)) {
+        if ("formula" in v) out = { f: "=" + v.formula, v: v.result === undefined ? null : v.result };
+        else if ("sharedFormula" in v) out = { f: "=(công thức dùng chung)", v: v.result === undefined ? null : v.result };
+        else if (Array.isArray(v.richText)) out = { f: null, v: v.richText.map(t => t.text).join("") };
+        else if ("text" in v) out = { f: null, v: v.text };
+        else return; // ô lỗi (#N/A...) coi như trống
+      } else out = { f: null, v };
+      map.set(rn * 100000 + cn, out);
+      if (rn > maxRow) maxRow = rn;
+      if (cn > maxCol) maxCol = cn;
+    });
+  });
+  const EMPTY = { f: null, v: null };
+  return { maxRow, maxCol, get(r, c) { return map.get(r * 100000 + c) || EMPTY; } };
+}
+async function loadFile(file) {
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(await file.arrayBuffer());
+  return { wb, sheets: wb.worksheets.map(ws => ({ name: ws.name, ws, grid: gridFromWorksheet(ws) })) };
+}
+
+// Giao diện: chọn file, xem trước, tải về.
+// Tải thư viện ExcelJS (thử lần lượt nhiều nguồn)
+const EXCELJS_URLS = [
+  "https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js",
+  "https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js",
+  "https://unpkg.com/exceljs@4.4.0/dist/exceljs.min.js",
+];
+let excelReady = null;
+function loadExcelJS() {
+  if (typeof ExcelJS !== "undefined") return Promise.resolve(true);
+  if (excelReady) return excelReady;
+  excelReady = (async () => {
+    for (const url of EXCELJS_URLS) {
+      const ok = await new Promise(res => {
+        const sc = document.createElement("script");
+        sc.src = url; sc.onload = () => res(true); sc.onerror = () => { sc.remove(); res(false); };
+        document.head.appendChild(sc);
+      });
+      if (ok && typeof ExcelJS !== "undefined") return true;
+    }
+    excelReady = null; // cho phép thử lại lần sau
+    return false;
+  })();
+  return excelReady;
+}
+
+const $ = id => document.getElementById(id);
+const esc = v => String(v === null || v === undefined ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const show = n => (n === null || n === undefined || n === "") ? "" : (typeof n === "number" ? n.toLocaleString("vi-VN", { maximumFractionDigits: 1 }) : esc(n));
+let picked = [];
+let outBlob = null;
+let busy = false, again = false;
+
+function setStatus(msg, cls) { const s = $("status"); s.textContent = msg; s.className = cls || ""; }
+function renderChips() {
+  $("chips").innerHTML = picked.map((f, i) => `<span class="chip">File ${i + 1}: ${esc(f.name)}<button class="x" data-i="${i}" title="Bỏ file này">✕</button></span>`).join("");
+  $("btnReset").classList.toggle("hidden", picked.length === 0);
+}
+function clearResult() {
+  outBlob = null;
+  $("resultCard").classList.add("hidden");
+  $("btnDownload").classList.add("hidden");
+}
+function resetAll() { picked = []; $("files").value = ""; clearResult(); renderChips(); setStatus("", ""); }
+
+function renderMerged(s) {
+  const wd = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+  let h = '<div class="scroll"><table><thead><tr><th class="sc1">Stt</th><th class="sc2">Biển tàu / xe</th><th>Khối lượng</th>';
+  for (let d = 1; d <= s.nd; d++) h += `<th>${d}/${s.month}<br><span class="wd">${wd[new Date(s.year, s.month - 1, d).getDay()]}</span></th>`;
+  h += "<th>Tổng số</th><th>Tổng KL (M3)</th><th>Nguồn</th><th>Ghi chú</th></tr></thead><tbody>";
+  let sumKl = 0;
+  s.rows.forEach((m, i) => {
+    sumKl += m.kl;
+    h += `<tr class="${m.merged ? "mg" : ""}"><td class="sc1">${i + 1}</td><td class="sc2">${esc(m.display)}</td><td class="c">${show(m.weight)}</td>`;
+    for (let d = 1; d <= s.nd; d++) h += `<td class="n">${d in m.daily ? show(m.daily[d]) : ""}</td>`;
+    h += `<td class="n">${show(m.total)}</td><td class="n">${show(m.kl)}</td><td class="c">${esc(m.src)}</td><td class="note">${esc(m.note)}</td></tr>`;
+  });
+  h += `<tr class="tt"><td class="sc1"></td><td class="sc2">TỔNG CỘNG</td><td></td>${"<td></td>".repeat(s.nd + 1)}<td class="n">${show(sumKl)}</td><td></td><td></td></tr>`;
+  return h + "</tbody></table></div>";
+}
+function renderCopy(ws) {
+  const g = gridFromWorksheet(ws), maxR = Math.min(g.maxRow, 80), maxC = Math.min(g.maxCol, 40);
+  let h = '<div class="scroll"><table><tbody>';
+  for (let r = 1; r <= maxR; r++) {
+    h += "<tr>";
+    for (let c = 1; c <= maxC; c++) { const v = g.get(r, c).v; h += `<td>${v instanceof Date ? v.toLocaleDateString("vi-VN") : (typeof v === "object" && v !== null ? "" : show(v))}</td>`; }
+    h += "</tr>";
+  }
+  h += "</tbody></table></div>";
+  if (g.maxRow > maxR || g.maxCol > maxC) h += '<p class="small">Chỉ hiển thị phần đầu của sheet; file tải về có đầy đủ.</p>';
+  return h;
+}
+function renderReport(doc) {
+  let h = '<div class="rep">';
+  for (const b of doc) {
+    if (b.t === "title") h += `<h2>${esc(b.text)}</h2>`;
+    else if (b.t === "h") h += `<h3>${esc(b.text)}</h3>`;
+    else if (b.t === "text") h += `<p>${esc(b.text)}</p>`;
+    else if (b.t === "table") {
+      h += "<table><thead><tr>" + b.cols.map(c => `<th>${esc(c.label)}</th>`).join("") + "</tr></thead><tbody>";
+      for (const row of b.rows) h += "<tr>" + row.map((v, i) => {
+        const lv = b.cols[i].label === "Mức độ" ? (v === LV_CHECK ? "lv-c" : "lv-i") : "";
+        return `<td class="${typeof v === "number" ? "n" : ""} ${lv}">${show(v)}</td>`;
+      }).join("") + "</tr>";
+      h += "</tbody></table>";
+    }
+  }
+  return h + "</div>";
+}
+function renderPreview(plan, loaded) {
+  const tabs = plan.sheets.map(s => ({ label: s.name, html: () => s.type === "merged" ? renderMerged(s) : renderCopy(loaded[s.fileIdx].sheets.find(x => x.name === s.srcName).ws) }));
+  const nCheck = plan.warns.filter(w => w.level === LV_CHECK).length;
+  tabs.push({ label: "Báo cáo gộp" + (nCheck ? ` (${nCheck} điểm cần kiểm tra)` : ""), html: () => renderReport(plan.doc) });
+  $("tabs").innerHTML = tabs.map((t, i) => `<button class="tab" data-i="${i}">${esc(t.label)}</button>`).join("");
+  const pick = i => {
+    document.querySelectorAll("#tabs .tab").forEach((b, k) => b.classList.toggle("on", k === i));
+    $("pv").innerHTML = tabs[i].html();
+  };
+  $("tabs").onclick = e => { const b = e.target.closest(".tab"); if (b) pick(Number(b.dataset.i)); };
+  pick(0);
+  $("resultCard").classList.remove("hidden");
+}
+
+async function runMerge() {
+  if (busy) { again = true; return; }
+  if (picked.length < 2) { clearResult(); setStatus(picked.length ? "Mới có 1 file. Hãy chọn thêm ít nhất 1 file nữa." : "", "work"); return; }
+  busy = true; again = false;
+  setStatus("Đang tải thư viện Excel...", "work");
+  if (!(await loadExcelJS())) { busy = false; clearResult(); setStatus("Chưa tải được thư viện Excel. Hãy kiểm tra kết nối internet rồi chọn lại file.", "err"); return; }
+  setStatus(`Đang đọc và gộp ${picked.length} file...`, "work");
+  const snapshot = picked.slice();
+  try {
+    const loaded = [];
+    for (const f of snapshot) { try { loaded.push(await loadFile(f)); } catch (e) { throw new Error(`không đọc được file "${f.name}" (${e && e.message ? e.message : e})`); } }
+    const plan = planMerge(loaded.map(l => l.sheets.map(s => ({ name: s.name, grid: s.grid }))), snapshot.map(f => f.name));
+    const out = new ExcelJS.Workbook();
+    out.calcProperties = { fullCalcOnLoad: true };
+    for (const s of plan.sheets) {
+      if (s.type === "merged") writeMergedSheet(out, s);
+      else copySheetAsIs(out, loaded[s.fileIdx].sheets.find(x => x.name === s.srcName).ws, s.name);
+    }
+    writeReportSheet(out, plan.doc);
+    outBlob = new Blob([await out.xlsx.writeBuffer()], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    renderPreview(plan, loaded);
+    $("btnDownload").classList.remove("hidden");
+    setStatus(`Đã gộp xong ${snapshot.length} file. Xem trước bên dưới (tab "Báo cáo gộp" giải thích chi tiết), đúng ý thì bấm "Tải file tổng hợp".`, "ok");
+  } catch (e) {
+    console.error(e);
+    clearResult();
+    setStatus("Có lỗi: " + (e && e.message ? e.message : e), "err");
+  } finally {
+    busy = false;
+    if (again) await runMerge();
+  }
+}
+
+function addFiles(list) {
+  const all = [...list], files = all.filter(f => /\.xlsx$/i.test(f.name));
+  $("files").value = "";
+  if (!files.length) { if (all.length) setStatus("Chỉ nhận file .xlsx. File .xls hãy mở bằng Excel rồi Lưu thành .xlsx.", "err"); return; }
+  const dup = [];
+  for (const f of files) {
+    if (picked.some(p => p.name === f.name && p.size === f.size && p.lastModified === f.lastModified)) dup.push(f.name);
+    else picked.push(f);
+  }
+  renderChips();
+  runMerge().then(() => {
+    const extra = [];
+    if (files.length < all.length) extra.push(`Đã bỏ qua ${all.length - files.length} file không phải .xlsx.`);
+    if (dup.length) extra.push(`File đã chọn rồi nên không thêm lần nữa: ${dup.join(", ")}.`);
+    if (extra.length) { const s = $("status"); s.textContent += " " + extra.join(" "); }
+  });
+}
+
+$("files").addEventListener("change", e => addFiles(e.target.files));
+["dragover", "dragenter"].forEach(ev => $("drop").addEventListener(ev, e => { e.preventDefault(); $("drop").classList.add("over"); }));
+["dragleave", "drop"].forEach(ev => $("drop").addEventListener(ev, e => { e.preventDefault(); $("drop").classList.remove("over"); }));
+$("drop").addEventListener("drop", e => addFiles(e.dataTransfer.files));
+["dragover", "drop"].forEach(ev => window.addEventListener(ev, e => e.preventDefault()));
+$("btnReset").addEventListener("click", resetAll);
+$("chips").addEventListener("click", e => {
+  const b = e.target.closest(".x"); if (!b) return;
+  picked.splice(Number(b.dataset.i), 1);
+  renderChips(); runMerge();
+});
+$("btnDownload").addEventListener("click", () => {
+  if (!outBlob) return;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(outBlob);
+  a.download = "TONG_HOP.xlsx";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+});
 </script>
-<script src="src/core.js"></script>
-<script src="src/excel-io.js"></script>
-<script src="src/ui.js"></script>
 </body>
 </html>
