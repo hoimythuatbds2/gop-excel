@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Công cụ gộp file Excel khối lượng</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<div class="wrap">
+  <h1>Công cụ gộp file Excel khối lượng</h1>
+  <p class="sub">Chọn từ 2 file trở lên (2, 3, 4... file đều được), công cụ tự gộp và cho xem trước. Hài lòng thì bấm tải về. Dữ liệu xử lý ngay trên máy bạn, không gửi đi đâu.</p>
+
+  <div class="card">
+    <label class="drop" id="drop">
+      <b>Chọn các file Excel (.xlsx) cần gộp</b>
+      <span class="hint">Bấm vào đây rồi giữ Ctrl (hoặc Shift) để chọn nhiều file cùng lúc, hoặc kéo thả các file vào đây. Có thể thêm file bất cứ lúc nào, công cụ sẽ gộp lại từ đầu.</span>
+      <input type="file" id="files" accept=".xlsx" multiple>
+    </label>
+    <div class="chips" id="chips"></div>
+    <div class="row" style="margin-top:14px">
+      <button class="green hidden" id="btnDownload">Tải file tổng hợp (.xlsx)</button>
+      <button class="gray hidden" id="btnReset">Xóa hết, chọn lại</button>
+    </div>
+    <div id="status"></div>
+  </div>
+
+  <div class="card hidden" id="resultCard">
+    <b>Xem trước file tổng hợp</b> <span class="small">(dòng tô vàng là dòng đã được gộp)</span>
+    <div class="tabs" id="tabs"></div>
+    <div id="pv"></div>
+  </div>
+
+  <div class="card">
+    <b>Quy tắc gộp</b>
+    <ol class="small">
+      <li>Các sheet của các file được ghép với nhau theo Tháng/Năm ghi trong sheet (T10 với T10, T11 với T11...); nếu không đọc được thì ghép theo tên sheet. Sheet chỉ có ở 1 file vẫn được đưa vào.</li>
+      <li>Biển số (cột B) giống nhau thì gộp thành 1 dòng, số liệu từng ngày được cộng lại. Không phân biệt chữ hoa/thường, dấu gạch ngang, khoảng trắng (98H05759 = 98H-05759).</li>
+      <li>Biển chỉ có ở 1 file vẫn được đưa vào file tổng hợp. Số file không bị giới hạn, biển nào xuất hiện ở bao nhiêu file thì số liệu được cộng từng ấy.</li>
+      <li>Tổng KL = tổng chuyến × khối lượng mỗi chuyến (xe), hoặc bằng tổng số (tàu không có khối lượng). Cùng 1 biển có nhiều mức khối lượng thì KL cộng riêng từng mức.</li>
+      <li>Dòng tổng ở cuối bảng và các cột tính nháp bên phải không được lấy; file tổng hợp tự tính lại tổng.</li>
+    </ol>
+    <p class="small">Cần có mạng internet khi mở công cụ này (để tải thư viện đọc/ghi Excel).</p>
+  </div>
+</div>
+
+<!-- Thư viện ExcelJS: tải từ cdnjs, nếu lỗi thì dùng jsDelivr -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<script>
+  if (typeof ExcelJS === "undefined") {
+    document.write('<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"><\/script>');
+  }
+</script>
+<script src="src/core.js"></script>
+<script src="src/excel-io.js"></script>
+<script src="src/ui.js"></script>
+</body>
+</html>
